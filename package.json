@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "troll-server": "node server-troll.js"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -39,6 +40,8 @@
     "react-dom": "^19.1.0",
     "react-ga4": "^2.1.0",
     "react-router-dom": "^7.7.1",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
     "vite-plugin-static-copy": "^3.1.2"
   },
   "devDependencies": {
