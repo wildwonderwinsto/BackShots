@@ -1,19 +1,16 @@
-import Nav from '../layouts/Nav';
-import Search from '../components/SearchContainer';
-import Footer from '../components/Footer';
-import QuickLinks from '../components/QuickLinks';
-import { memo } from 'react';
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
-const Home = memo(() => {
-  return (
-    <>
-      <Nav />
-      <Search />
-      <QuickLinks />
-      <Footer />
-    </>
-  );
-});
+const Home = () => {
+  const navigate = useNavigate();
 
-Home.displayName = 'Home';
+  useEffect(() => {
+    // Auto-redirect to your proxied website
+    sessionStorage.setItem('query', 'https://winstonswebsite.onrender.com');
+    navigate('/indev');
+  }, [navigate]);
+
+  return null; // Or a loading spinner
+};
+
 export default Home;

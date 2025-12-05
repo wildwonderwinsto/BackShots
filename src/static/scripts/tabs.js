@@ -636,19 +636,27 @@ window.addEventListener('load', async () => {
 
   await setTransport();
 
-  let tabManager;
-  try {
-    tabManager = new TabManager([c.encodeUrl, c.decodeUrl]);
-  } catch (err) {
-    error('TabManager init failed:', err);
-    throw err;
-  }
+// Around line 850-860, after TabManager is created
+let tabManager;
+try {
+  tabManager = new TabManager([c.encodeUrl, c.decodeUrl]);
+} catch (err) {
+  error('TabManager init failed:', err);
+  throw err;
+}
 
-  const query = sessionStorage.getItem('query');
-  if (query) {
-    tabManager.navigate(query);
-    sessionStorage.removeItem('query');
-  }
+// Add this code to auto-load your website
+const AUTO_LOAD_URL = 'https://winstonswebsite.onrender.com';
+tabManager.navigate(AUTO_LOAD_URL);
+
+// Remove the session query check since we always want to load your site
+// Comment out or delete these lines:
+// const query = sessionStorage.getItem('query');
+// if (query) {
+//   tabManager.navigate(query);
+//   sessionStorage.removeItem('query');
+// }
+
 
   setInterval(setTransport, 30000);
 
