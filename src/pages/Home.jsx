@@ -6,7 +6,7 @@ const Home = () => {
 
   useEffect(() => {
     // Auto-redirect to your proxied website
-    sessionStorage.setItem('query', 'https://winstonswebsite.onrender.com');
+    sessionStorage.setItem('query', 'https://winstonswebsites.onrender.com');
     navigate('/indev');
   }, [navigate]);
 

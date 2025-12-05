@@ -7,7 +7,7 @@ export default function Loader() {
   useEffect(() => {
     // Set the auto-load URL in sessionStorage
     if (!sessionStorage.getItem('query')) {
-      sessionStorage.setItem('query', 'https://winstonswebsite.onrender.com');
+      sessionStorage.setItem('query', 'https://winstonswebsites.onrender.com');
     }
 
     const handleMsg = (e) => {
