@@ -2,7 +2,6 @@ import { defineConfig, normalizePath } from 'vite';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react-swc';
-import vitePluginBundleObfuscator from 'vite-plugin-bundle-obfuscator';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 import { logging, server as wisp } from '@mercuryworkshop/wisp-js/server';
 import { createBareServer } from "@tomphttp/bare-server-node";
@@ -28,32 +27,8 @@ Object.assign(wisp.options, {
 
 const routeRequest = (req, resOrSocket, head) => {
   if (req.url?.startsWith('/wisp/')) return wisp.routeRequest(req, resOrSocket, head);
-  if (bare.shouldRoute(req))
+  if (bare?.shouldRoute(req))
     return head ? bare.routeUpgrade(req, resOrSocket, head) : bare.routeRequest(req, resOrSocket);
-};
-
-const obf = {
-  enable: true,
-  autoExcludeNodeModules: true,
-  threadPool: true,
-  options: {
-    compact: true,
-    controlFlowFlattening: true,
-    controlFlowFlatteningThreshold: 0.5,
-    deadCodeInjection: false,
-    debugProtection: false,
-    disableConsoleOutput: true,
-    identifierNamesGenerator: 'hexadecimal',
-    selfDefending: true,
-    simplify: true,
-    splitStrings: false,
-    stringArray: true,
-    stringArrayEncoding: [],
-    stringArrayCallsTransform: false,
-    transformObjectKeys: false,
-    unicodeEscapeSequence: false,
-    ignoreImports: true,
-  },
 };
 
 export default defineConfig(({ command }) => {
@@ -62,7 +37,6 @@ export default defineConfig(({ command }) => {
   return {
     plugins: [
       react(),
-      vitePluginBundleObfuscator(obf),
       viteStaticCopy({
         targets: [
           { src: [normalizePath(resolve(libcurlPath, '*'))], dest: 'libcurl' },
@@ -123,9 +97,15 @@ export default defineConfig(({ command }) => {
     build: {
       target: 'es2022',
       reportCompressedSize: false,
+      // OPTIMIZATION: Reduce chunk sizes
+      chunkSizeWarningLimit: 1000,
+      cssCodeSplit: true,
       esbuild: { 
         legalComments: 'none',
-        treeShaking: true
+        treeShaking: true,
+        minifyIdentifiers: true,
+        minifySyntax: true,
+        minifyWhitespace: true
       },
       rollupOptions: {
         input: {
@@ -136,24 +116,43 @@ export default defineConfig(({ command }) => {
           entryFileNames: '[hash].js',
           chunkFileNames: 'chunks/[name].[hash].js',
           assetFileNames: 'assets/[hash].[ext]',
+          // OPTIMIZATION: Aggressive code splitting
           manualChunks: (id) => {
             if (!id.includes('node_modules')) return;
             const m = id.split('node_modules/')[1];
             const pkg = m.startsWith('@') ? m.split('/').slice(0,2).join('/') : m.split('/')[0];
+            
+            // Core React bundle (load first)
             if (/react-router|react-dom|react\b/.test(pkg)) return 'react';
+            
+            // Heavy UI libraries (lazy load)
             if (/^@mui\//.test(pkg) || /^@emotion\//.test(pkg)) return 'mui';
+            
+            // Icons (separate chunk)
             if (/lucide/.test(pkg)) return 'icons';
+            
+            // Analytics (optional)
             if (/react-ga4/.test(pkg)) return 'analytics';
+            
+            // Progress bars
             if (/nprogress/.test(pkg)) return 'progress';
+            
+            // Everything else
             return 'vendor';
           },
         },
         treeshake: {
-          moduleSideEffects: 'no-external'
+          moduleSideEffects: 'no-external',
+          // OPTIMIZATION: More aggressive tree shaking
+          propertyReadSideEffects: false,
+          unknownGlobalSideEffects: false
         }
       },
       minify: 'esbuild',
-      sourcemap: false
+      sourcemap: false,
+      // OPTIMIZATION: Enable compression
+      assetsInlineLimit: 4096, // Inline assets < 4kb
+      cssMinify: true
     },
     css: {
       modules: {
@@ -175,6 +174,13 @@ export default defineConfig(({ command }) => {
           rewrite: (path) => path.replace(/^\/assets-fb/, ''),
         },
       },
+    },
+    // OPTIMIZATION: Build performance
+    optimizeDeps: {
+      include: ['react', 'react-dom'],
+      esbuildOptions: {
+        target: 'es2022'
+      }
     },
     define: {
       __ENVIRONMENT__: JSON.stringify(environment)
