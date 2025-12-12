@@ -121,4 +121,9 @@ app.setNotFoundHandler((req, reply) =>
     : reply.code(404).send({ error: "Not Found" })
 );
 
-app.listen({ port }).then(() => console.log(`Server running on ${port}`));
+app.listen({ port, host: '0.0.0.0' }).then(() => {
+  console.log(`Server running on 0.0.0.0:${port}`);
+}).catch((err) => {
+  console.error('Failed to start:', err);
+  process.exit(1);
+});
