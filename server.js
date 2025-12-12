@@ -35,12 +35,12 @@ server.on("upgrade", (req, sock, head) =>
 );
 
 const app = Fastify({
-  serverFactory: h => {
+  serverFactory: h => (
     server.on("request", (req, res) =>
       bare?.shouldRoute(req) ? bare.routeRequest(req, res) : h(req, res)
-    );
-    return server;
-  },
+    ),
+    server
+  ),
   logger: false,
   keepAliveTimeout: 30000,
   connectionTimeout: 60000,
@@ -121,10 +121,4 @@ app.setNotFoundHandler((req, reply) =>
     : reply.code(404).send({ error: "Not Found" })
 );
 
-// Start the server - minimal change for Render compatibility
-app.listen({ port, host: '0.0.0.0' }).then(() => {
-  console.log(`Server running on 0.0.0.0:${port}`);
-}).catch((err) => {
-  console.error('Failed to start:', err);
-  process.exit(1);
-});
+app.listen({ port }).then(() => console.log(`Server running on ${port}`));
