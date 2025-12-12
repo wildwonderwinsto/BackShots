@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import ReactGA from 'react-ga4';
 import App from './App';
-import GlobalOverlay from './components/GlobalOverlay'; // ADD THIS
 
 typeof window != 'undefined' &&
   ('requestIdleCallback' in window
@@ -16,7 +15,6 @@ startTransition(() => {
   root.render(
     <BrowserRouter>
       <App />
-      <GlobalOverlay /> {/* ADD THIS */}
     </BrowserRouter>,
   );
 });

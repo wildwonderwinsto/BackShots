@@ -1,37 +1,6 @@
-services:
+ services:
   - type: web
-    name: dogeub-proxy
-    runtime: node
+    name: educational-website
+    env: node
     plan: free
-    # OPTIMIZATION: Use specific Node version
-    buildCommand: npm ci --production && npm run build
-    startCommand: node server.js
-    # OPTIMIZATION: Environment variables for performance
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: NODE_OPTIONS
-        value: "--max-old-space-size=256 --optimize-for-size"
-      - key: UV_THREADPOOL_SIZE
-        value: "2"
-    # OPTIMIZATION: Health check endpoint
-    healthCheckPath: /
-    # OPTIMIZATION: Auto-deploy on push
-    autoDeploy: true
-    # OPTIMIZATION: Enable HTTP/2
-    headers:
-      - path: /*
-        name: X-Content-Type-Options
-        value: nosniff
-      - path: /*
-        name: X-Frame-Options
-        value: SAMEORIGIN
-      - path: /assets/*
-        name: Cache-Control
-        value: public, max-age=604800, immutable
-      - path: /*.js
-        name: Cache-Control
-        value: public, max-age=604800, immutable
-      - path: /*.css
-        name: Cache-Control
-        value: public, max-age=604800, immutable
+    startCommand: npm install && npm run build && node server.js
