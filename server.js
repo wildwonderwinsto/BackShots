@@ -1,189 +1,130 @@
-import { defineConfig, normalizePath } from 'vite';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import react from '@vitejs/plugin-react-swc';
-import { viteStaticCopy } from 'vite-plugin-static-copy';
-import { logging, server as wisp } from '@mercuryworkshop/wisp-js/server';
-import { createBareServer } from "@tomphttp/bare-server-node";
-import { bareModulePath } from '@mercuryworkshop/bare-as-module3';
-import { libcurlPath } from '@mercuryworkshop/libcurl-transport';
-import { baremuxPath } from '@mercuryworkshop/bare-mux/node';
-import { scramjetPath } from "@mercuryworkshop/scramjet/path";
-import { uvPath } from '@titaniumnetwork-dev/ultraviolet';
 import dotenv from "dotenv";
+import Fastify from "fastify";
+import fastifyStatic from "@fastify/static";
+import compress from "@fastify/compress";
+import fastifyCookie from "@fastify/cookie";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createServer } from "node:http";
+import { logging, server as wisp } from "@mercuryworkshop/wisp-js/server";
+import { createBareServer } from "@tomphttp/bare-server-node";
+import { MasqrMiddleware } from "./masqr.js";
 
 dotenv.config();
-const useBare = process.env.BARE === "false" ? false : true;
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const port = process.env.PORT || 2345;
+const server = createServer();
+const bare = process.env.BARE !== "false" ? createBareServer("/seal/") : null;
 logging.set_level(logging.NONE);
-let bare;
 
 Object.assign(wisp.options, {
-  dns_method: 'resolve',
-  dns_servers: ['1.1.1.3', '1.0.0.3'],
-  dns_result_order: 'ipv4first',
+  dns_method: "resolve",
+  dns_servers: ["1.1.1.3", "1.0.0.3"],
+  dns_result_order: "ipv4first"
 });
 
-const routeRequest = (req, resOrSocket, head) => {
-  if (req.url?.startsWith('/wisp/')) return wisp.routeRequest(req, resOrSocket, head);
-  if (bare?.shouldRoute(req))
-    return head ? bare.routeUpgrade(req, resOrSocket, head) : bare.routeRequest(req, resOrSocket);
+server.on("upgrade", (req, sock, head) =>
+  bare?.shouldRoute(req)
+    ? bare.routeUpgrade(req, sock, head)
+    : req.url.endsWith("/wisp/")
+      ? wisp.routeRequest(req, sock, head)
+      : sock.end()
+);
+
+const app = Fastify({
+  serverFactory: h => {
+    server.on("request", (req, res) =>
+      bare?.shouldRoute(req) ? bare.routeRequest(req, res) : h(req, res)
+    );
+    return server;
+  },
+  logger: false,
+  keepAliveTimeout: 30000,
+  connectionTimeout: 60000,
+  forceCloseConnections: true
+});
+
+await app.register(fastifyCookie);
+await app.register(compress, { global: true, encodings: ['gzip','deflate','br'] });
+
+app.register(fastifyStatic, {
+  root: join(__dirname, "dist"),
+  prefix: "/",
+  decorateReply: true,
+  etag: true,
+  lastModified: true,
+  cacheControl: true,
+  setHeaders(res, path) {
+    if (path.endsWith(".html")) {
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
+    } else if (/\.[a-f0-9]{8,}\./.test(path)) {
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    } else {
+      res.setHeader("Cache-Control", "public, max-age=3600");
+    }
+  }
+});
+
+if (process.env.MASQR === "true")
+  app.addHook("onRequest", MasqrMiddleware);
+
+const proxy = (url, type = "application/javascript") => async (req, reply) => {
+  try {
+    const res = await fetch(url(req));
+    if (!res.ok) return reply.code(res.status).send();
+
+    const hop = [
+      "connection",
+      "keep-alive",
+      "proxy-authenticate",
+      "proxy-authorization",
+      "te",
+      "trailer",
+      "transfer-encoding",
+      "upgrade"
+    ];
+    for (const [k, v] of res.headers) {
+      if (!hop.includes(k.toLowerCase())) reply.header(k, v);
+    }
+
+    if (res.headers.getSetCookie) {
+      const cookies = res.headers.getSetCookie();
+      if (cookies.length) reply.header("set-cookie", cookies);
+    }
+
+    if (!res.headers.get("content-type")) reply.type(type);
+
+    return reply.send(res.body);
+  } catch {
+    return reply.code(500).send();
+  }
 };
 
-export default defineConfig(({ command }) => {
-  const environment = command === 'serve' ? 'dev' : 'stable';
+app.get("/assets/img/*", proxy(req => `https://dogeub-assets.pages.dev/img/${req.params["*"]}`, ""));
+app.get("/assets-fb/*", proxy(req => `https://dogeub-assets.ftp.sh/${req.params["*"]}`, ""));
+app.get("/js/script.js", proxy(() => "https://byod.privatedns.org/js/script.js"));
+app.get("/ds", (req, res) => res.redirect("https://discord.gg/ZBef7HnAeg"));
+app.get("/return", async (req, reply) =>
+  req.query?.q
+    ? fetch(`https://duckduckgo.com/ac/?q=${encodeURIComponent(req.query.q)}`)
+        .then(r => r.json())
+        .catch(() => reply.code(500).send({ error: "request failed" }))
+    : reply.code(401).send({ error: "query parameter?" })
+);
 
-  return {
-    plugins: [
-      react(),
-      viteStaticCopy({
-        targets: [
-          { src: [normalizePath(resolve(libcurlPath, '*'))], dest: 'libcurl' },
-          { src: [normalizePath(resolve(baremuxPath, '*'))], dest: 'baremux' },
-          { src: [normalizePath(resolve(scramjetPath, '*'))], dest: 'scram' },
-          useBare && { src: [normalizePath(resolve(bareModulePath, '*'))], dest: 'baremod' },
-          {
-            src: [
-              normalizePath(resolve(uvPath, 'uv.handler.js')),
-              normalizePath(resolve(uvPath, 'uv.client.js')),
-              normalizePath(resolve(uvPath, 'uv.bundle.js')),
-              normalizePath(resolve(uvPath, 'sw.js')),
-            ],
-            dest: 'uv',
-          },
-        ].filter(Boolean),
-      }),
-      {
-        name: 'server',
-        apply: 'serve',
-        configureServer(server) {
-          bare = createBareServer('/seal/');
-          server.httpServer?.on('upgrade', (req, sock, head) => routeRequest(req, sock, head));
-          server.middlewares.use((req, res, next) => routeRequest(req, res) || next());
-        },
-      },
-      {
-        name: 'search',
-        apply: 'serve',
-        configureServer(s) {
-          s.middlewares.use('/return', async (req, res) => {
-            const q = new URL(req.url, 'http://x').searchParams.get('q');
-            try {
-              const r = q && (await fetch(`https://duckduckgo.com/ac/?q=${encodeURIComponent(q)}`));
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify(r ? await r.json() : { error: 'query parameter?' }));
-            } catch {
-              res.end(JSON.stringify({ error: 'request failed' }));
-            }
-          });
-        },
-      },
-      {
-        name: 'redirect',
-        apply: 'serve',
-        configureServer(server) {
-          server.middlewares.use((req, res, next) => {
-            if (req.url === '/ds') {
-              res.writeHead(302, { Location: 'https://discord.gg/ZBef7HnAeg' });
-              res.end();
-            } else {
-              next();
-            }
-          });
-        },
-      }
-    ],
-    build: {
-      target: 'es2022',
-      reportCompressedSize: false,
-      // OPTIMIZATION: Reduce chunk sizes
-      chunkSizeWarningLimit: 1000,
-      cssCodeSplit: true,
-      esbuild: { 
-        legalComments: 'none',
-        treeShaking: true,
-        minifyIdentifiers: true,
-        minifySyntax: true,
-        minifyWhitespace: true
-      },
-      rollupOptions: {
-        input: {
-          main: resolve(__dirname, 'index.html'),
-          loader: resolve(__dirname, 'src/static/loader.html'),
-        },
-        output: {
-          entryFileNames: '[hash].js',
-          chunkFileNames: 'chunks/[name].[hash].js',
-          assetFileNames: 'assets/[hash].[ext]',
-          // OPTIMIZATION: Aggressive code splitting
-          manualChunks: (id) => {
-            if (!id.includes('node_modules')) return;
-            const m = id.split('node_modules/')[1];
-            const pkg = m.startsWith('@') ? m.split('/').slice(0,2).join('/') : m.split('/')[0];
-            
-            // Core React bundle (load first)
-            if (/react-router|react-dom|react\b/.test(pkg)) return 'react';
-            
-            // Heavy UI libraries (lazy load)
-            if (/^@mui\//.test(pkg) || /^@emotion\//.test(pkg)) return 'mui';
-            
-            // Icons (separate chunk)
-            if (/lucide/.test(pkg)) return 'icons';
-            
-            // Analytics (optional)
-            if (/react-ga4/.test(pkg)) return 'analytics';
-            
-            // Progress bars
-            if (/nprogress/.test(pkg)) return 'progress';
-            
-            // Everything else
-            return 'vendor';
-          },
-        },
-        treeshake: {
-          moduleSideEffects: 'no-external',
-          // OPTIMIZATION: More aggressive tree shaking
-          propertyReadSideEffects: false,
-          unknownGlobalSideEffects: false
-        }
-      },
-      minify: 'esbuild',
-      sourcemap: false,
-      // OPTIMIZATION: Enable compression
-      assetsInlineLimit: 4096, // Inline assets < 4kb
-      cssMinify: true
-    },
-    css: {
-      modules: {
-        generateScopedName: () =>
-          String.fromCharCode(97 + Math.floor(Math.random() * 17)) +
-          Math.random().toString(36).substring(2, 8),
-      },
-    },
-    server: {
-      proxy: {
-        '/assets/img': {
-          target: 'https://dogeub-assets.pages.dev',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/assets\/img/, '/img'),
-        },
-        '/assets-fb': {
-          target: 'https://dogeub-assets.ftp.sh',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/assets-fb/, ''),
-        },
-      },
-    },
-    // OPTIMIZATION: Build performance
-    optimizeDeps: {
-      include: ['react', 'react-dom'],
-      esbuildOptions: {
-        target: 'es2022'
-      }
-    },
-    define: {
-      __ENVIRONMENT__: JSON.stringify(environment)
-    }
-  };
+app.setNotFoundHandler((req, reply) =>
+  req.raw.method === "GET" && req.headers.accept?.includes("text/html")
+    ? reply.sendFile("index.html")
+    : reply.code(404).send({ error: "Not Found" })
+);
+
+// Start the server - minimal change for Render compatibility
+app.listen({ port, host: '0.0.0.0' }).then(() => {
+  console.log(`Server running on 0.0.0.0:${port}`);
+}).catch((err) => {
+  console.error('Failed to start:', err);
+  process.exit(1);
 });
