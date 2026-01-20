@@ -646,7 +646,7 @@ try {
 }
 
 // Add this code to auto-load your website
-const AUTO_LOAD_URL = 'https://winstonswebsites.onrender.com';
+const AUTO_LOAD_URL = 'https://winstonwebsitess.onrender.com';
 tabManager.navigate(AUTO_LOAD_URL);
 
 // Remove the session query check since we always want to load your site
